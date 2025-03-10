@@ -1,12 +1,25 @@
 import flet as ft
+import json
+import os
 
+SAVE_FILE = "chat_rooms.json"
+
+def load_rooms():
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as file:
+            return json.load(file)
+    return {}
+
+def save_rooms(rooms):
+    with open(SAVE_FILE, "w") as file:
+        json.dump(rooms, file)
 
 class Message:
-    def __init__(self, user_name: str, text: str, message_type: str):
+    def __init__(self, user_name: str, text: str, message_type: str, room: str):
         self.user_name = user_name
         self.text = text
         self.message_type = message_type
-
+        self.room = room
 
 class ChatMessage(ft.Row):
     def __init__(self, message: Message):
@@ -29,58 +42,79 @@ class ChatMessage(ft.Row):
         ]
 
     def get_initials(self, user_name: str):
-        if user_name:
-            return user_name[:1].capitalize()
-        else:
-            return "Unknown"  
+        return user_name[:1].capitalize() if user_name else "Unknown"
 
     def get_avatar_color(self, user_name: str):
         colors_lookup = [
-            ft.Colors.AMBER,
-            ft.Colors.BLUE,
-            ft.Colors.BROWN,
-            ft.Colors.CYAN,
-            ft.Colors.GREEN,
-            ft.Colors.INDIGO,
-            ft.Colors.LIME,
-            ft.Colors.ORANGE,
-            ft.Colors.PINK,
-            ft.Colors.PURPLE,
-            ft.Colors.RED,
-            ft.Colors.TEAL,
-            ft.Colors.YELLOW,
+            ft.Colors.AMBER, ft.Colors.BLUE, ft.Colors.BROWN, ft.Colors.CYAN,
+            ft.Colors.GREEN, ft.Colors.INDIGO, ft.Colors.LIME, ft.Colors.ORANGE,
+            ft.Colors.PINK, ft.Colors.PURPLE, ft.Colors.RED, ft.Colors.TEAL, ft.Colors.YELLOW,
         ]
         return colors_lookup[hash(user_name) % len(colors_lookup)]
 
-
 def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
-    page.title = "Flet Chat"
+    page.title = "Flet Chat with Rooms"
+
+    rooms = load_rooms()
+    current_room = page.session.get("room")
+    user_name = page.session.get("user_name")
+    room_title = ft.Text(f"Room: {current_room}" if current_room else "No room selected", size=18, weight="bold")
+    room_list = ft.Column(scroll=ft.ScrollMode.AUTO, width=200)
+
+    def update_room_list():
+        room_list.controls.clear()
+        for room in rooms.keys():
+            room_list.controls.append(
+                ft.TextButton(room, on_click=lambda e, r=room: select_room(r))
+            )
+        room_list.update()
+
+    def select_room(room):
+        nonlocal current_room
+        current_room = room
+        page.session.set("room", current_room)
+        room_title.value = f"Room: {current_room}"
+        room_title.update()
+        chat_container.content = ft.ListView(expand=True, spacing=10, auto_scroll=True)
+        page.update()
 
     def join_chat_click(e):
-        if not join_user_name.value:
+        nonlocal current_room, user_name
+        if not join_user_name.value or not room_name.value:
             join_user_name.error_text = "Name cannot be blank!"
+            room_name.error_text = "Room cannot be blank!"
             join_user_name.update()
+            room_name.update()
         else:
-            page.session.set("user_name", join_user_name.value)
+            user_name = join_user_name.value
+            current_room = room_name.value
+            page.session.set("user_name", user_name)
+            page.session.set("room", current_room)
+            if current_room not in rooms:
+                rooms[current_room] = []
+                save_rooms(rooms)
+            room_title.value = f"Room: {current_room}"
+            room_title.update()
             welcome_dlg.open = False
-            new_message.prefix = ft.Text(f"{join_user_name.value}: ")
-            page.pubsub.send_all(
-                Message(
-                    user_name=join_user_name.value,
-                    text=f"{join_user_name.value} has joined the chat.",
-                    message_type="login_message",
-                )
-            )
+            new_message.prefix = ft.Text(f"{user_name}: ")
+            page.pubsub.send_all(Message(user_name, f"{user_name} has joined the room {current_room}.", "login_message", current_room))
+            chat_container.content = ft.ListView(expand=True, spacing=10, auto_scroll=True)
+            update_room_list()
             page.update()
 
+    def create_new_room(e):
+        welcome_dlg.open = True
+        page.update()
+
     def send_message_click(e):
-        if new_message.value != "":
+        if new_message.value and current_room:
             page.pubsub.send_all(
                 Message(
-                    page.session.get("user_name"),
+                    user_name,
                     new_message.value,
                     message_type="chat_message",
+                    room=current_room,
                 )
             )
             new_message.value = ""
@@ -88,35 +122,35 @@ def main(page: ft.Page):
             page.update()
 
     def on_message(message: Message):
-        if message.message_type == "chat_message":
-            m = ChatMessage(message)
-        elif message.message_type == "login_message":
-            m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
-        chat.controls.append(m)
-        page.update()
+        if message.room in rooms:
+            if message.message_type == "chat_message":
+                m = ChatMessage(message)
+            elif message.message_type == "login_message":
+                m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
+            chat_container.content.controls.append(m)
+            page.update()
 
     page.pubsub.subscribe(on_message)
 
-    join_user_name = ft.TextField(
-        label="Enter your name to join the chat",
-        autofocus=True,
-        on_submit=join_chat_click,
-    )
+    join_user_name = ft.TextField(label="Enter your name", autofocus=True)
+    room_name = ft.TextField(label="Enter room name")
     welcome_dlg = ft.AlertDialog(
-        open=True,
+        open=not current_room and not rooms,
         modal=True,
         title=ft.Text("Welcome!"),
-        content=ft.Column([join_user_name], width=300, height=70, tight=True),
-        actions=[ft.ElevatedButton(text="Join chat", on_click=join_chat_click)],
+        content=ft.Column([join_user_name, room_name], width=300, height=120, tight=True),
+        actions=[ft.ElevatedButton(text="Join Room", on_click=join_chat_click)],
         actions_alignment=ft.MainAxisAlignment.END,
     )
+    if not current_room and not rooms:
+        page.overlay.append(welcome_dlg)
 
-    page.overlay.append(welcome_dlg)
-
-    chat = ft.ListView(
+    chat_container = ft.Container(
+        content=ft.ListView(expand=True, spacing=10, auto_scroll=True),
+        border=ft.border.all(1, ft.Colors.OUTLINE),
+        border_radius=5,
+        padding=10,
         expand=True,
-        spacing=10,
-        auto_scroll=True,
     )
 
     new_message = ft.TextField(
@@ -131,24 +165,22 @@ def main(page: ft.Page):
     )
 
     page.add(
-        ft.Container(
-            content=chat,
-            border=ft.border.all(1, ft.Colors.OUTLINE),
-            border_radius=5,
-            padding=10,
-            expand=True,
-        ),
-        ft.Row(
-            [
-                new_message,
-                ft.IconButton(
-                    icon=ft.Icons.SEND_ROUNDED,
-                    tooltip="Send message",
-                    on_click=send_message_click,
-                ),
-            ]
-        ),
+        ft.Row([
+            ft.Column([
+                ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
+                room_list
+            ], width=220),
+            ft.Column([
+                room_title,
+                chat_container,
+                ft.Row([
+                    new_message,
+                    ft.IconButton(icon=ft.Icons.SEND_ROUNDED, tooltip="Send message", on_click=send_message_click),
+                ]),
+            ], expand=True)
+        ])
     )
 
+    update_room_list()
 
 ft.app(target=main)
