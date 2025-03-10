@@ -77,23 +77,40 @@ def main(page: ft.Page):
         room_title.value = f"Room: {current_room}"
         room_title.update()
         chat_container.content = ft.ListView(expand=True, spacing=10, auto_scroll=True)
+        
+        if current_room in rooms:
+            for message_data in rooms[current_room]:
+                message = Message(**message_data)
+                if message.message_type == "chat_message":
+                    m = ChatMessage(message)
+                elif message.message_type == "login_message":
+                    m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
+                chat_container.content.controls.append(m)
+        
         page.update()
 
     def join_chat_click(e):
         nonlocal current_room, user_name
-        if not join_user_name.value or not room_name.value:
+        if not join_user_name.value:
             join_user_name.error_text = "Name cannot be blank!"
-            room_name.error_text = "Room cannot be blank!"
             join_user_name.update()
-            room_name.update()
         else:
             user_name = join_user_name.value
-            current_room = room_name.value
             page.session.set("user_name", user_name)
-            page.session.set("room", current_room)
-            if current_room not in rooms:
+
+            if not rooms:
+                if not room_name.value:
+                    room_name.error_text = "Room cannot be blank!"
+                    room_name.update()
+                    return
+                current_room = room_name.value
+                page.session.set("room", current_room)
                 rooms[current_room] = []
                 save_rooms(rooms)
+            else:
+                current_room = list(rooms.keys())[0]
+                page.session.set("room", current_room)
+
             room_title.value = f"Room: {current_room}"
             room_title.update()
             welcome_dlg.open = False
@@ -109,14 +126,17 @@ def main(page: ft.Page):
 
     def send_message_click(e):
         if new_message.value and current_room:
-            page.pubsub.send_all(
-                Message(
-                    user_name,
-                    new_message.value,
-                    message_type="chat_message",
-                    room=current_room,
-                )
+            message = Message(
+                user_name,
+                new_message.value,
+                message_type="chat_message",
+                room=current_room,
             )
+            page.pubsub.send_all(message)
+            
+            rooms[current_room].append(message.__dict__)
+            save_rooms(rooms)
+            
             new_message.value = ""
             new_message.focus()
             page.update()
@@ -133,16 +153,22 @@ def main(page: ft.Page):
     page.pubsub.subscribe(on_message)
 
     join_user_name = ft.TextField(label="Enter your name", autofocus=True)
-    room_name = ft.TextField(label="Enter room name")
+    room_name = ft.TextField(label="Enter room name", visible=not rooms)  
     welcome_dlg = ft.AlertDialog(
-        open=not current_room and not rooms,
+        open=not user_name,  
         modal=True,
         title=ft.Text("Welcome!"),
-        content=ft.Column([join_user_name, room_name], width=300, height=120, tight=True),
+        content=ft.Column(
+            [join_user_name, room_name] if not rooms else [join_user_name], 
+            width=300,
+            height=120 if not rooms else 80,  
+            tight=True,
+        ),
         actions=[ft.ElevatedButton(text="Join Room", on_click=join_chat_click)],
         actions_alignment=ft.MainAxisAlignment.END,
     )
-    if not current_room and not rooms:
+
+    if not user_name:
         page.overlay.append(welcome_dlg)
 
     chat_container = ft.Container(
