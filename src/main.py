@@ -143,7 +143,10 @@ def main(page: ft.Page):
 
     def create_new_room(e):
         create_room_dlg.open = True
+        if create_room_dlg not in page.overlay:
+            page.overlay.append(create_room_dlg)
         page.update()
+
 
     def create_room_click(e):
         nonlocal current_room, user_name
