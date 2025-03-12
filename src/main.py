@@ -22,9 +22,13 @@ class Message:
         self.room = room
 
 class ChatMessage(ft.Row):
-    def __init__(self, message: Message):
+    def __init__(self, message: Message, on_edit, on_delete):
         super().__init__()
         self.vertical_alignment = ft.CrossAxisAlignment.START
+        self.message = message
+        self.on_edit = on_edit
+        self.on_delete = on_delete
+
         self.controls = [
             ft.CircleAvatar(
                 content=ft.Text(self.get_initials(message.user_name)),
@@ -39,6 +43,21 @@ class ChatMessage(ft.Row):
                 tight=True,
                 spacing=5,
             ),
+            ft.Row(
+                [
+                    ft.IconButton(
+                        icon=ft.icons.EDIT,
+                        tooltip="Edit",
+                        on_click=self.edit_message,
+                    ),
+                    ft.IconButton(
+                        icon=ft.icons.DELETE,
+                        tooltip="Delete",
+                        on_click=self.delete_message,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.END,
+            ),
         ]
 
     def get_initials(self, user_name: str):
@@ -52,6 +71,12 @@ class ChatMessage(ft.Row):
         ]
         return colors_lookup[hash(user_name) % len(colors_lookup)]
 
+    def edit_message(self, e):
+        self.on_edit(self.message)
+
+    def delete_message(self, e):
+        self.on_delete(self.message)
+
 def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     page.title = "Flet Chat with Rooms"
@@ -60,7 +85,7 @@ def main(page: ft.Page):
     current_room = page.session.get("room")
     user_name = page.session.get("user_name")
     room_title = ft.Text(f"Room: {current_room}" if current_room else "No room selected", size=18, weight="bold")
-    room_list = ft.Column(scroll=ft.ScrollMode.AUTO, width=220) 
+    room_list = ft.Column(scroll=ft.ScrollMode.AUTO, width=220)
 
     def update_room_list():
         room_list.controls.clear()
@@ -92,7 +117,7 @@ def main(page: ft.Page):
             for message_data in rooms[current_room]:
                 message = Message(**message_data)
                 if message.message_type == "chat_message":
-                    m = ChatMessage(message)
+                    m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
                 elif message.message_type == "login_message":
                     m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
                 chat_container.content.controls.append(m)
@@ -147,7 +172,6 @@ def main(page: ft.Page):
             page.overlay.append(create_room_dlg)
         page.update()
 
-
     def create_room_click(e):
         nonlocal current_room, user_name
         if not create_room_user_name.value:
@@ -191,10 +215,54 @@ def main(page: ft.Page):
             new_message.focus()
             page.update()
 
+    def edit_message(message: Message):
+        def on_edit(e):
+            new_text = ft.TextField(value=message.text, autofocus=True)
+            edit_dlg = ft.AlertDialog(
+                open=True,
+                modal=True,
+                title=ft.Text("Edit Message"),
+                content=new_text,
+                actions=[
+                    ft.ElevatedButton(
+                        text="Save",
+                        on_click=lambda e: save_edit(message, new_text.value),
+                    ),
+                    ft.ElevatedButton(
+                        text="Cancel",
+                        on_click=lambda e: close_edit_dlg(),
+                    ),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+            page.overlay.append(edit_dlg)
+            page.update()
+
+        def save_edit(message: Message, new_text: str):
+            message.text = new_text
+            rooms[message.room] = [msg.__dict__ if msg != message else message.__dict__ for msg in rooms[message.room]]
+            save_rooms(rooms)
+            close_edit_dlg()
+            select_room(message.room)
+
+        def close_edit_dlg():
+            page.overlay.pop()
+            page.update()
+
+        on_edit(None)
+
+    def delete_message(message: Message):
+        def on_delete(e):
+            rooms[message.room] = [msg for msg in rooms[message.room] if msg != message.__dict__]
+            save_rooms(rooms)
+            select_room(message.room)
+
+        on_delete(None)
+
     def on_message(message: Message):
         if message.room in rooms:
             if message.message_type == "chat_message":
-                m = ChatMessage(message)
+                m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
             elif message.message_type == "login_message":
                 m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
             chat_container.content.controls.append(m)
@@ -203,15 +271,15 @@ def main(page: ft.Page):
     page.pubsub.subscribe(on_message)
 
     join_user_name = ft.TextField(label="Enter your name", autofocus=True)
-    room_name = ft.TextField(label="Enter room name", visible=not rooms) 
+    room_name = ft.TextField(label="Enter room name", visible=not rooms)
     welcome_dlg = ft.AlertDialog(
-        open=not user_name, 
+        open=not user_name,
         modal=True,
         title=ft.Text("Welcome!"),
         content=ft.Column(
-            [join_user_name, room_name] if not rooms else [join_user_name],  
+            [join_user_name, room_name] if not rooms else [join_user_name],
             width=300,
-            height=120 if not rooms else 80, 
+            height=120 if not rooms else 80,
             tight=True,
         ),
         actions=[ft.ElevatedButton(text="Join Room", on_click=join_chat_click)],
@@ -242,7 +310,7 @@ def main(page: ft.Page):
         border=ft.border.all(1, ft.Colors.OUTLINE),
         border_radius=5,
         padding=10,
-        expand=True, 
+        expand=True,
     )
 
     new_message = ft.TextField(
@@ -259,7 +327,6 @@ def main(page: ft.Page):
     page.add(
         ft.Row(
             [
-                
                 ft.Column(
                     [
                         ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
@@ -272,7 +339,7 @@ def main(page: ft.Page):
                 ft.Column(
                     [
                         room_title,
-                        chat_container,  
+                        chat_container,
                         ft.Row(
                             [
                                 new_message,
@@ -281,10 +348,10 @@ def main(page: ft.Page):
                             alignment=ft.MainAxisAlignment.END,
                         ),
                     ],
-                    expand=True,  
+                    expand=True,
                 ),
             ],
-            expand=True,  
+            expand=True,
         )
     )
 
