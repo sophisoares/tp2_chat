@@ -61,7 +61,7 @@ class ChatMessage(ft.Row):
         ]
 
     def get_initials(self, user_name: str):
-        return user_name[:1].capitalize() if user_name else "Unknown"
+        return user_name[:1].capitalize()
 
     def get_avatar_color(self, user_name: str):
         colors_lookup = [
@@ -166,12 +166,6 @@ def main(page: ft.Page):
             update_room_list()
             page.update()
 
-    def create_new_room(e):
-        create_room_dlg.open = True
-        if create_room_dlg not in page.overlay:
-            page.overlay.append(create_room_dlg)
-        page.update()
-
     def create_room_click(e):
         nonlocal current_room, user_name
         if not create_room_user_name.value:
@@ -197,6 +191,36 @@ def main(page: ft.Page):
             chat_container.content = ft.ListView(expand=True, spacing=10, auto_scroll=True)
             update_room_list()
             page.update()
+
+    def close_create_room_dlg():
+        create_room_dlg.open = False
+        page.update()
+
+    create_room_user_name = ft.TextField(label="Enter your name", autofocus=True)
+    create_room_name = ft.TextField(label="Enter new room name")
+    create_room_dlg = ft.AlertDialog(
+        open=False,
+        modal=True,
+        title=ft.Text("Create New Room"),
+        content=ft.Column(
+            [create_room_user_name, create_room_name],
+            width=300,
+            height=120,
+            tight=True,
+        ),
+        actions=[
+            ft.ElevatedButton(text="Create Room", on_click=create_room_click),
+            ft.IconButton(icon=ft.icons.CLOSE, on_click=lambda e: close_create_room_dlg()),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+        on_dismiss=lambda e: close_create_room_dlg(),
+    )
+
+    def create_new_room(e): 
+        create_room_dlg.open = True
+        if create_room_dlg not in page.overlay:
+            page.overlay.append(create_room_dlg)
+        page.update()
 
     def send_message_click(e):
         if new_message.value and current_room:
@@ -237,25 +261,40 @@ def main(page: ft.Page):
             )
             page.overlay.append(edit_dlg)
             page.update()
-
+    
         def save_edit(message: Message, new_text: str):
-            message.text = new_text
-            rooms[message.room] = [msg.__dict__ if msg != message else message.__dict__ for msg in rooms[message.room]]
+            for idx, msg in enumerate(rooms[message.room]):
+                if isinstance(msg, dict) and msg.get("text") == message.text and msg.get("user_name") == message.user_name:
+                    msg["text"] = new_text
+                    break
+                elif isinstance(msg, Message) and msg.text == message.text and msg.user_name == message.user_name:
+                    msg.text = new_text
+                    rooms[message.room][idx] = msg.__dict__
+                    break
+                
             save_rooms(rooms)
             close_edit_dlg()
             select_room(message.room)
-
+    
         def close_edit_dlg():
-            page.overlay.pop()
-            page.update()
-
-        on_edit(None)
+            page.overlay.pop()  
+            page.update()  
+    
+        on_edit(None)  
 
     def delete_message(message: Message):
         def on_delete(e):
-            rooms[message.room] = [msg for msg in rooms[message.room] if msg != message.__dict__]
+            rooms[message.room] = [msg for idx, msg in enumerate(rooms[message.room]) if idx != message_index(message)]
             save_rooms(rooms)
             select_room(message.room)
+
+        def message_index(message: Message):
+            for idx, msg in enumerate(rooms[message.room]):
+                if isinstance(msg, dict) and msg.get("text") == message.text and msg.get("user_name") == message.user_name:
+                    return idx
+                elif isinstance(msg, Message) and msg.text == message.text and msg.user_name == message.user_name:
+                    return idx
+            return -1
 
         on_delete(None)
 
@@ -283,22 +322,6 @@ def main(page: ft.Page):
             tight=True,
         ),
         actions=[ft.ElevatedButton(text="Join Room", on_click=join_chat_click)],
-        actions_alignment=ft.MainAxisAlignment.END,
-    )
-
-    create_room_user_name = ft.TextField(label="Enter your name", autofocus=True)
-    create_room_name = ft.TextField(label="Enter new room name")
-    create_room_dlg = ft.AlertDialog(
-        open=False,
-        modal=True,
-        title=ft.Text("Create New Room"),
-        content=ft.Column(
-            [create_room_user_name, create_room_name],
-            width=300,
-            height=120,
-            tight=True,
-        ),
-        actions=[ft.ElevatedButton(text="Create Room", on_click=create_room_click)],
         actions_alignment=ft.MainAxisAlignment.END,
     )
 
