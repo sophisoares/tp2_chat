@@ -1,6 +1,7 @@
 import flet as ft
 import json
 import os
+import base64
 
 SAVE_FILE = "chat_rooms.json"
 
@@ -15,11 +16,13 @@ def save_rooms(rooms):
         json.dump(rooms, file)
 
 class Message:
-    def __init__(self, user_name: str, text: str, message_type: str, room: str):
+    def __init__(self, user_name: str, text: str, message_type: str, room: str, file_data=None, file_name=None):
         self.user_name = user_name
         self.text = text
         self.message_type = message_type
         self.room = room
+        self.file_data = file_data
+        self.file_name = file_name
 
 class ChatMessage(ft.Row):
     def __init__(self, message: Message, on_edit, on_delete):
@@ -29,7 +32,7 @@ class ChatMessage(ft.Row):
         self.on_edit = on_edit
         self.on_delete = on_delete
 
-        self.controls = [
+        controls = [
             ft.CircleAvatar(
                 content=ft.Text(self.get_initials(message.user_name)),
                 color=ft.Colors.WHITE,
@@ -59,6 +62,21 @@ class ChatMessage(ft.Row):
                 alignment=ft.MainAxisAlignment.END,
             ),
         ]
+
+        if message.file_data:
+            if message.file_name.endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                
+                file_control = ft.Image(
+                    src_base64=message.file_data,
+                    width=300,  
+                    height=200,  
+                    fit=ft.ImageFit.CONTAIN,  
+                )
+            else:
+                file_control = ft.Text(f"File: {message.file_name}", color=ft.Colors.BLUE, selectable=True)
+            controls[1].controls.append(file_control)
+
+        self.controls = controls
 
     def get_initials(self, user_name: str):
         return user_name[:1].capitalize()
@@ -119,7 +137,7 @@ def main(page: ft.Page):
                 if message.message_type == "chat_message":
                     m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
                 elif message.message_type == "login_message":
-                    m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
+                    m = ft.Text(message.text, italic=True, color=ft.Colors.WHITE, size=12)  
                 chat_container.content.controls.append(m)
         
         page.update()
@@ -239,6 +257,27 @@ def main(page: ft.Page):
             new_message.focus()
             page.update()
 
+    def on_file_pick(e: ft.FilePickerResultEvent):
+        if e.files and current_room:
+            for file in e.files:
+                with open(file.path, "rb") as f:
+                    file_data = base64.b64encode(f.read()).decode("utf-8")
+                message = Message(
+                    user_name,
+                    "",
+                    message_type="chat_message",
+                    room=current_room,
+                    file_data=file_data,
+                    file_name=file.name,
+                )
+                page.pubsub.send_all(message)
+                rooms[current_room].append(message.__dict__)
+                save_rooms(rooms)
+            page.update()
+
+    file_picker = ft.FilePicker(on_result=on_file_pick)
+    page.overlay.append(file_picker)
+
     def edit_message(message: Message):
         def on_edit(e):
             new_text = ft.TextField(value=message.text, autofocus=True)
@@ -254,10 +293,10 @@ def main(page: ft.Page):
                     ),
                     ft.ElevatedButton(
                         text="Cancel",
-                        on_click=lambda e: close_edit_dlg(),
-                    ),
+                        on_click=lambda e: close_edit_dlg()),
+                    
                 ],
-                actions_alignment=ft.MainAxisAlignment.END,
+            actions_alignment=ft.MainAxisAlignment.END,
             )
             page.overlay.append(edit_dlg)
             page.update()
@@ -303,7 +342,7 @@ def main(page: ft.Page):
             if message.message_type == "chat_message":
                 m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
             elif message.message_type == "login_message":
-                m = ft.Text(message.text, italic=True, color=ft.Colors.BLACK45, size=12)
+                m = ft.Text(message.text, italic=True, color=ft.Colors.WHITE, size=12)  
             chat_container.content.controls.append(m)
             page.update()
 
@@ -367,6 +406,7 @@ def main(page: ft.Page):
                             [
                                 new_message,
                                 ft.IconButton(icon=ft.Icons.SEND_ROUNDED, tooltip="Send message", on_click=send_message_click),
+                                ft.IconButton(icon=ft.icons.ATTACH_FILE, tooltip="Send file", on_click=lambda e: file_picker.pick_files(allow_multiple=True)),
                             ],
                             alignment=ft.MainAxisAlignment.END,
                         ),
