@@ -2,13 +2,19 @@ import flet as ft
 import json
 import os
 import base64
+from typing import Dict, List
 
 SAVE_FILE = "chat_rooms.json"
 
 def load_rooms():
     if os.path.exists(SAVE_FILE):
         with open(SAVE_FILE, "r") as file:
-            return json.load(file)
+            data = json.load(file)
+            for room in data.values():
+                for msg in room:
+                    if "reactions" in msg and isinstance(msg["reactions"], list):
+                        msg["reactions"] = {}
+            return data
     return {}
 
 def save_rooms(rooms):
@@ -16,38 +22,78 @@ def save_rooms(rooms):
         json.dump(rooms, file)
 
 class Message:
-    def __init__(self, user_name: str, text: str, message_type: str, room: str, file_data=None, file_name=None):
+    def __init__(self, user_name: str, text: str, message_type: str, room: str, 
+                 file_data=None, file_name=None, reactions: Dict[str, List[str]] = None):
         self.user_name = user_name
         self.text = text
         self.message_type = message_type
         self.room = room
         self.file_data = file_data
         self.file_name = file_name
+        self.reactions = reactions or {}
+
+    def add_reaction(self, emoji: str, user_name: str):
+        if emoji not in self.reactions:
+            self.reactions[emoji] = []
+        if user_name not in self.reactions[emoji]:
+            self.reactions[emoji].append(user_name)
+    
+    def remove_reaction(self, emoji: str, user_name: str):
+        if emoji in self.reactions and user_name in self.reactions[emoji]:
+            self.reactions[emoji].remove(user_name)
+            if not self.reactions[emoji]:
+                del self.reactions[emoji]
 
 class ChatMessage(ft.Row):
-    def __init__(self, message: Message, on_edit, on_delete):
+    def __init__(self, message: Message, on_edit, on_delete, on_reaction, current_user: str, highlight: bool = False):
         super().__init__()
         self.vertical_alignment = ft.CrossAxisAlignment.START
         self.message = message
         self.on_edit = on_edit
         self.on_delete = on_delete
+        self.on_reaction = on_reaction
+        self.current_user = current_user
+        self.highlight = highlight
+        self.emoji_picker = ft.PopupMenuButton(
+            items=[
+                ft.PopupMenuItem(text="👍", on_click=lambda e: self.add_or_remove_reaction("👍")),
+                ft.PopupMenuItem(text="❤️", on_click=lambda e: self.add_or_remove_reaction("❤️")),
+                ft.PopupMenuItem(text="😂", on_click=lambda e: self.add_or_remove_reaction("😂")),
+                ft.PopupMenuItem(text="😮", on_click=lambda e: self.add_or_remove_reaction("😮")),
+                ft.PopupMenuItem(text="😢", on_click=lambda e: self.add_or_remove_reaction("😢")),
+                ft.PopupMenuItem(text="🎉", on_click=lambda e: self.add_or_remove_reaction("🎉")),
+            ]
+        )
 
-        controls = [
+        self.build_controls()
+
+    def build_controls(self):
+        bg_color = ft.colors.AMBER_100 if self.highlight else None
+        border = ft.border.all(2, ft.colors.AMBER_400) if self.highlight else None
+        
+        message_content = [
             ft.CircleAvatar(
-                content=ft.Text(self.get_initials(message.user_name)),
+                content=ft.Text(self.get_initials(self.message.user_name)),
                 color=ft.Colors.WHITE,
-                bgcolor=self.get_avatar_color(message.user_name),
+                bgcolor=self.get_avatar_color(self.message.user_name),
             ),
-            ft.Column(
-                [
-                    ft.Text(message.user_name, weight="bold"),
-                    ft.Text(message.text, selectable=True),
-                ],
-                tight=True,
-                spacing=5,
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(self.message.user_name, weight="bold"),
+                        ft.Text(self.message.text, selectable=True),
+                    ],
+                    tight=True,
+                    spacing=5,
+                ),
+                bgcolor=bg_color,
+                border=border,
+                border_radius=5,
+                padding=5,
             ),
             ft.Row(
                 [
+                    self.emoji_picker,
                     ft.IconButton(
                         icon=ft.icons.EDIT,
                         tooltip="Edit",
@@ -63,19 +109,49 @@ class ChatMessage(ft.Row):
             ),
         ]
 
-        if message.file_data:
-            if message.file_name.endswith(('.png', '.jpg', '.jpeg', '.gif')):
+        if self.message.file_data:
+            if self.message.file_name.endswith(('.png', '.jpg', '.jpeg', '.gif')):
                 file_control = ft.Image(
-                    src_base64=message.file_data,
-                    width=300,  
-                    height=200,  
-                    fit=ft.ImageFit.CONTAIN,  
+                    src_base64=self.message.file_data,
+                    width=300,
+                    height=200,
+                    fit=ft.ImageFit.CONTAIN,
                 )
             else:
-                file_control = ft.Text(f"File: {message.file_name}", color=ft.Colors.BLUE, selectable=True)
-            controls[1].controls.append(file_control)
+                file_control = ft.Text(f"File: {self.message.file_name}", color=ft.Colors.BLUE, selectable=True)
+            message_content[1].content.controls.append(file_control)
 
-        self.controls = controls
+        if self.message.reactions:
+            reactions_row = ft.Row(wrap=True, spacing=5)
+            for emoji, users in self.message.reactions.items():
+                count = len(users)
+                reacted = self.current_user in users
+                reactions_row.controls.append(
+                    ft.TextButton(
+                        content=ft.Row([
+                            ft.Text(emoji),
+                            ft.Text(str(count), size=12)
+                        ], spacing=2),
+                        style=ft.ButtonStyle(
+                            color=ft.colors.BLUE if reacted else None,
+                            bgcolor=ft.colors.BLUE_100 if reacted else ft.colors.GREY_200,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        ),
+                        on_click=lambda e, emoji=emoji: self.add_or_remove_reaction(emoji),
+                    )
+                )
+            message_content[1].content.controls.append(reactions_row)
+
+        self.controls = message_content
+
+    def add_or_remove_reaction(self, emoji: str):
+        if emoji in self.message.reactions and self.current_user in self.message.reactions[emoji]:
+            self.message.remove_reaction(emoji, self.current_user)
+        else:
+            self.message.add_reaction(emoji, self.current_user)
+        self.on_reaction(self.message)
+        self.build_controls()
+        self.update()
 
     def get_initials(self, user_name: str):
         return user_name[:1].capitalize()
@@ -121,6 +197,7 @@ def main(page: ft.Page):
     user_name = page.session.get("user_name")
     room_title = ft.Text(f"Room: {current_room}" if current_room else "No room selected", size=18, weight="bold")
     room_list = ft.Column(scroll=ft.ScrollMode.AUTO, width=220)
+    search_active = False
 
     def update_room_list():
         room_list.controls.clear()
@@ -141,8 +218,9 @@ def main(page: ft.Page):
         room_list.update()
 
     def select_room(room):
-        nonlocal current_room
+        nonlocal current_room, search_active
         current_room = room
+        search_active = False
         page.session.set("room", current_room)
         room_title.value = f"Room: {current_room}"
         room_title.update()
@@ -152,12 +230,26 @@ def main(page: ft.Page):
             for message_data in rooms[current_room]:
                 message = Message(**message_data)
                 if message.message_type == "chat_message":
-                    m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
+                    m = ChatMessage(
+                        message, 
+                        on_edit=edit_message, 
+                        on_delete=delete_message,
+                        on_reaction=update_reactions,
+                        current_user=user_name,
+                        highlight=False
+                    )
                 elif message.message_type == "login_message":
                     m = ft.Text(message.text, italic=True, color=ft.Colors.GREY_500, size=12)
                 chat_container.content.controls.append(m)
         
         page.update()
+
+    def update_reactions(message: Message):
+        for idx, msg_data in enumerate(rooms[message.room]):
+            if msg_data.get("text") == message.text and msg_data.get("user_name") == message.user_name:
+                rooms[message.room][idx]["reactions"] = message.reactions
+                break
+        save_rooms(rooms)
 
     def delete_room(room):
         if room in rooms:
@@ -311,9 +403,8 @@ def main(page: ft.Page):
                     ft.ElevatedButton(
                         text="Cancel",
                         on_click=lambda e: close_edit_dlg()),
-                    
                 ],
-            actions_alignment=ft.MainAxisAlignment.END,
+                actions_alignment=ft.MainAxisAlignment.END,
             )
             page.overlay.append(edit_dlg)
             page.update()
@@ -333,10 +424,10 @@ def main(page: ft.Page):
             select_room(message.room)
     
         def close_edit_dlg():
-            page.overlay.pop()  
-            page.update()  
+            page.overlay.pop()
+            page.update()
     
-        on_edit(None)  
+        on_edit(None)
 
     def delete_message(message: Message):
         def on_delete(e):
@@ -357,13 +448,87 @@ def main(page: ft.Page):
     def on_message(message: Message):
         if message.room in rooms:
             if message.message_type == "chat_message":
-                m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
+                m = ChatMessage(
+                    message, 
+                    on_edit=edit_message, 
+                    on_delete=delete_message,
+                    on_reaction=update_reactions,
+                    current_user=user_name,
+                    highlight=False
+                )
             elif message.message_type == "login_message":
                 m = ft.Text(message.text, italic=True, color=ft.Colors.GREY_500, size=12)
             chat_container.content.controls.append(m)
             page.update()
 
     page.pubsub.subscribe(on_message)
+
+    # Search functionality
+    search_query = ft.TextField(label="Search for...", autofocus=True)
+    search_active = False
+
+    def open_search(e):
+        search_dialog.open = True
+        page.update()
+
+    def perform_search(e):
+        nonlocal search_active
+        query = search_query.value.strip().lower()
+        
+        if not query or not current_room:
+            return
+
+        search_active = True
+        chat_container.content.controls.clear()
+        
+        for message_data in rooms[current_room]:
+            message = Message(**message_data)
+            matches = query in message.text.lower() or query in message.user_name.lower()
+            
+            if message.message_type == "chat_message":
+                m = ChatMessage(
+                    message, 
+                    on_edit=edit_message, 
+                    on_delete=delete_message,
+                    on_reaction=update_reactions,
+                    current_user=user_name,
+                    highlight=matches
+                )
+            elif message.message_type == "login_message":
+                m = ft.Text(message.text, italic=True, color=ft.Colors.GREY_500, size=12)
+            
+            chat_container.content.controls.append(m)
+        
+        search_dialog.open = False
+        page.update()
+
+    def clear_search(e):
+        nonlocal search_active
+        search_active = False
+        search_query.value = ""
+        select_room(current_room)
+        page.update()
+
+    def close_dialog(e):
+        search_dialog.open = False
+        page.update()
+
+    search_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Search Messages"),
+        content=ft.Column(
+            [
+                search_query,
+            ],
+            width=400,
+        ),
+        actions=[
+            ft.TextButton("Search", on_click=perform_search),
+            ft.TextButton("Clear", on_click=clear_search),
+            ft.TextButton("Close", on_click=close_dialog),
+        ],
+    )
+    page.overlay.append(search_dialog)
 
     join_user_name = ft.TextField(label="Enter your name", autofocus=True)
     room_name = ft.TextField(label="Enter room name", visible=not rooms)
@@ -412,6 +577,11 @@ def main(page: ft.Page):
                             [
                                 ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
                                 theme_icon_button,
+                                ft.IconButton(
+                                    icon=ft.icons.SEARCH,
+                                    tooltip="Search messages",
+                                    on_click=open_search,
+                                ),
                             ],
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         ),
