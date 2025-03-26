@@ -65,7 +65,6 @@ class ChatMessage(ft.Row):
 
         if message.file_data:
             if message.file_name.endswith(('.png', '.jpg', '.jpeg', '.gif')):
-                
                 file_control = ft.Image(
                     src_base64=message.file_data,
                     width=300,  
@@ -98,6 +97,24 @@ class ChatMessage(ft.Row):
 def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     page.title = "Flet Chat with Rooms"
+
+    dark_mode = False
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.update()
+
+    def toggle_theme(e):
+        nonlocal dark_mode
+        dark_mode = not dark_mode
+        page.theme_mode = ft.ThemeMode.DARK if dark_mode else ft.ThemeMode.LIGHT
+        theme_icon_button.icon = ft.icons.DARK_MODE if dark_mode else ft.icons.LIGHT_MODE
+        theme_icon_button.tooltip = "Modo escuro" if dark_mode else "Modo claro"
+        page.update()
+
+    theme_icon_button = ft.IconButton(
+        icon=ft.icons.LIGHT_MODE,
+        tooltip="Modo escuro",
+        on_click=toggle_theme,
+    )
 
     rooms = load_rooms()
     current_room = page.session.get("room")
@@ -137,7 +154,7 @@ def main(page: ft.Page):
                 if message.message_type == "chat_message":
                     m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
                 elif message.message_type == "login_message":
-                    m = ft.Text(message.text, italic=True, color=ft.Colors.WHITE, size=12)  
+                    m = ft.Text(message.text, italic=True, color=ft.Colors.GREY_500, size=12)
                 chat_container.content.controls.append(m)
         
         page.update()
@@ -342,7 +359,7 @@ def main(page: ft.Page):
             if message.message_type == "chat_message":
                 m = ChatMessage(message, on_edit=edit_message, on_delete=delete_message)
             elif message.message_type == "login_message":
-                m = ft.Text(message.text, italic=True, color=ft.Colors.WHITE, size=12)  
+                m = ft.Text(message.text, italic=True, color=ft.Colors.GREY_500, size=12)
             chat_container.content.controls.append(m)
             page.update()
 
@@ -391,7 +408,13 @@ def main(page: ft.Page):
             [
                 ft.Column(
                     [
-                        ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
+                        ft.Row(
+                            [
+                                ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
+                                theme_icon_button,
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        ),
                         room_list,
                     ],
                     width=220,
