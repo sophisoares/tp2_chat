@@ -1,8 +1,5 @@
 import flet as ft
-#import json
-#import os
 import base64
-#from typing import Dict, List
 from storage import load_rooms, save_rooms
 from models import Message, ChatMessage
 
@@ -300,7 +297,7 @@ def main(page: ft.Page):
 
     page.pubsub.subscribe(on_message)
 
-    # Search functionality
+    
     search_query = ft.TextField(label="Search for...", autofocus=True)
     search_active = False
 
