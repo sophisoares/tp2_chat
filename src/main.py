@@ -32,6 +32,13 @@ def main(page: ft.Page):
     room_title = ft.Text(f"Room: {current_room}" if current_room else "No room selected", size=18, weight="bold")
     room_list = ft.Column(scroll=ft.ScrollMode.AUTO, width=220)
     search_active = False
+    menu_open = False
+
+    def toggle_menu(e):
+        nonlocal menu_open
+        menu_open = not menu_open
+        menu_container.visible = menu_open
+        page.update()
 
     def update_room_list():
         room_list.controls.clear()
@@ -52,9 +59,11 @@ def main(page: ft.Page):
         room_list.update()
 
     def select_room(room):
-        nonlocal current_room, search_active
+        nonlocal current_room, search_active, menu_open
         current_room = room
         search_active = False
+        menu_open = False
+        menu_container.visible = False
         page.session.set("room", current_room)
         room_title.value = f"Room: {current_room}"
         room_title.update()
@@ -297,7 +306,6 @@ def main(page: ft.Page):
 
     page.pubsub.subscribe(on_message)
 
-    
     search_query = ft.TextField(label="Search for...", autofocus=True)
     search_active = False
 
@@ -402,32 +410,52 @@ def main(page: ft.Page):
         on_submit=send_message_click,
     )
 
+    menu_button = ft.IconButton(
+        icon=ft.icons.MENU,
+        tooltip="Menu",
+        on_click=toggle_menu,
+    )
+
+    menu_container = ft.Container(
+        content=ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
+                        theme_icon_button,
+                        ft.IconButton(
+                            icon=ft.icons.SEARCH,
+                            tooltip="Search messages",
+                            on_click=open_search,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                room_list,
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            alignment=ft.MainAxisAlignment.START,
+        ),
+        width=250,
+        padding=10,
+        bgcolor=ft.colors.SURFACE_VARIANT,
+        border_radius=5,
+        visible=False,
+    )
+
     page.add(
         ft.Row(
             [
+                menu_container,
                 ft.Column(
                     [
                         ft.Row(
                             [
-                                ft.ElevatedButton(text="Create New Room", on_click=create_new_room),
-                                theme_icon_button,
-                                ft.IconButton(
-                                    icon=ft.icons.SEARCH,
-                                    tooltip="Search messages",
-                                    on_click=open_search,
-                                ),
+                                menu_button,
+                                room_title,
                             ],
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            alignment=ft.MainAxisAlignment.START,
                         ),
-                        room_list,
-                    ],
-                    width=220,
-                    scroll=ft.ScrollMode.AUTO,
-                    alignment=ft.MainAxisAlignment.START,
-                ),
-                ft.Column(
-                    [
-                        room_title,
                         chat_container,
                         ft.Row(
                             [
@@ -447,4 +475,4 @@ def main(page: ft.Page):
 
     update_room_list()
 
-ft.app(target=main)
+ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=8080)
