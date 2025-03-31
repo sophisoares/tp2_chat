@@ -6,12 +6,13 @@ from models import Message, ChatMessage
 def main(page: ft.Page):
     rooms = load_rooms()
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
-    page.title = "Flet Chat with Rooms"
-
-    dark_mode = False
+    page.title = "Flet Chat with Reactions"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.update()
 
+
+    dark_mode = False
+    
     def toggle_theme(e):
         nonlocal dark_mode
         dark_mode = not dark_mode
@@ -22,11 +23,11 @@ def main(page: ft.Page):
 
     theme_icon_button = ft.IconButton(
         icon=ft.icons.LIGHT_MODE,
-        tooltip="Modo escuro",
+        tooltip="Modo claro",
         on_click=toggle_theme,
     )
 
-    rooms = load_rooms()
+
     current_room = page.session.get("room")
     user_name = page.session.get("user_name")
     room_title = ft.Text(f"Room: {current_room}" if current_room else "No room selected", size=18, weight="bold")
@@ -71,7 +72,7 @@ def main(page: ft.Page):
         
         if current_room in rooms:
             for message_data in rooms[current_room]:
-                message = Message(**message_data)
+                message = Message.from_dict(message_data)
                 if message.message_type == "chat_message":
                     m = ChatMessage(
                         message, 
@@ -88,11 +89,17 @@ def main(page: ft.Page):
         page.update()
 
     def update_reactions(message: Message):
-        for idx, msg_data in enumerate(rooms[message.room]):
-            if msg_data.get("text") == message.text and msg_data.get("user_name") == message.user_name:
-                rooms[message.room][idx]["reactions"] = message.reactions
-                break
-        save_rooms(rooms)
+        if message.room in rooms:
+ 
+            for idx, msg_data in enumerate(rooms[message.room]):
+                if (msg_data.get("text") == message.text and 
+                    msg_data.get("user_name") == message.user_name):
+                    rooms[message.room][idx] = message.to_dict()
+                    break
+            
+            save_rooms(rooms)
+            
+            page.pubsub.send_all(message)
 
     def delete_room(room):
         if room in rooms:
@@ -202,7 +209,7 @@ def main(page: ft.Page):
             )
             page.pubsub.send_all(message)
             
-            rooms[current_room].append(message.__dict__)
+            rooms[current_room].append(message.to_dict())
             save_rooms(rooms)
             
             new_message.value = ""
@@ -223,7 +230,7 @@ def main(page: ft.Page):
                     file_name=file.name,
                 )
                 page.pubsub.send_all(message)
-                rooms[current_room].append(message.__dict__)
+                rooms[current_room].append(message.to_dict())
                 save_rooms(rooms)
             page.update()
 
@@ -254,12 +261,8 @@ def main(page: ft.Page):
     
         def save_edit(message: Message, new_text: str):
             for idx, msg in enumerate(rooms[message.room]):
-                if isinstance(msg, dict) and msg.get("text") == message.text and msg.get("user_name") == message.user_name:
+                if msg.get("text") == message.text and msg.get("user_name") == message.user_name:
                     msg["text"] = new_text
-                    break
-                elif isinstance(msg, Message) and msg.text == message.text and msg.user_name == message.user_name:
-                    msg.text = new_text
-                    rooms[message.room][idx] = msg.__dict__
                     break
                 
             save_rooms(rooms)
@@ -280,16 +283,21 @@ def main(page: ft.Page):
 
         def message_index(message: Message):
             for idx, msg in enumerate(rooms[message.room]):
-                if isinstance(msg, dict) and msg.get("text") == message.text and msg.get("user_name") == message.user_name:
-                    return idx
-                elif isinstance(msg, Message) and msg.text == message.text and msg.user_name == message.user_name:
+                if msg.get("text") == message.text and msg.get("user_name") == message.user_name:
                     return idx
             return -1
 
         on_delete(None)
 
     def on_message(message: Message):
-        if message.room in rooms:
+        if message.room == current_room:  
+            chat_container.content.controls = [
+                m for m in chat_container.content.controls 
+                if not (hasattr(m, 'message') and 
+                       m.message.text == message.text and 
+                       m.message.user_name == message.user_name)
+            ]
+            
             if message.message_type == "chat_message":
                 m = ChatMessage(
                     message, 
@@ -299,9 +307,14 @@ def main(page: ft.Page):
                     current_user=user_name,
                     highlight=False
                 )
+                chat_container.content.controls.append(m)
             elif message.message_type == "login_message":
                 m = ft.Text(message.text, italic=True, color=ft.Colors.GREY_500, size=12)
-            chat_container.content.controls.append(m)
+                chat_container.content.controls.append(m)
+            
+            if chat_container.content.auto_scroll:
+                chat_container.content.scroll_to(len(chat_container.content.controls)-1)
+            
             page.update()
 
     page.pubsub.subscribe(on_message)
@@ -324,7 +337,7 @@ def main(page: ft.Page):
         chat_container.content.controls.clear()
         
         for message_data in rooms[current_room]:
-            message = Message(**message_data)
+            message = Message.from_dict(message_data)
             matches = query in message.text.lower() or query in message.user_name.lower()
             
             if message.message_type == "chat_message":
