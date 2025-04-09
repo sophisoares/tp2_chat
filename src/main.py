@@ -488,4 +488,4 @@ def main(page: ft.Page):
 
     update_room_list()
 
-ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=8080)
+ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=8550)
