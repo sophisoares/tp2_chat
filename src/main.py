@@ -238,26 +238,26 @@ def main(page: ft.Page):
     page.overlay.append(file_picker)
 
     def edit_message(message: Message):
-        def on_edit(e):
-            new_text = ft.TextField(value=message.text, autofocus=True)
-            edit_dlg = ft.AlertDialog(
-                open=True,
-                modal=True,
-                title=ft.Text("Edit Message"),
-                content=new_text,
-                actions=[
-                    ft.ElevatedButton(
-                        text="Save",
-                        on_click=lambda e: save_edit(message, new_text.value),
-                    ),
-                    ft.ElevatedButton(
-                        text="Cancel",
-                        on_click=lambda e: close_edit_dlg()),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END,
-            )
-            page.overlay.append(edit_dlg)
-            page.update()
+        #def on_edit(e):
+        #    new_text = ft.TextField(value=message.text, autofocus=True)
+        #    edit_dlg = ft.AlertDialog(
+        #        open=True,
+        #        modal=True,
+        #        title=ft.Text("Edit Message"),
+        #        content=new_text,
+        #        actions=[
+        #            ft.ElevatedButton(
+        #                text="Save",
+        #                on_click=lambda e: save_edit(message, new_text.value),
+        #            ),
+        #            ft.ElevatedButton(
+        #                text="Cancel",
+        #                on_click=lambda e: close_edit_dlg()),
+        #        ],
+        #        actions_alignment=ft.MainAxisAlignment.END,
+        #    )
+        #    page.overlay.append(edit_dlg)
+        #    page.update()
     
         def save_edit(message: Message, new_text: str):
             for idx, msg in enumerate(rooms[message.room]):
@@ -270,10 +270,28 @@ def main(page: ft.Page):
             select_room(message.room)
     
         def close_edit_dlg():
-            page.overlay.pop()
+            page.close(edit_dlg)
             page.update()
     
-        on_edit(None)
+        new_text = ft.TextField(value=message.text, autofocus=True)
+        edit_dlg = ft.AlertDialog(
+            open=True,
+            modal=True,
+            title=ft.Text("Edit Message"),
+            content=new_text,
+            actions=[
+                ft.ElevatedButton(
+                    text="Save",
+                    on_click=lambda e: save_edit(message, new_text.value),
+                ),
+                ft.ElevatedButton(
+                    text="Cancel",
+                    on_click=lambda e: close_edit_dlg()),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.overlay.append(edit_dlg)
+        page.update()
 
     def delete_message(message: Message):
         def on_delete(e):
@@ -488,4 +506,8 @@ def main(page: ft.Page):
 
     update_room_list()
 
-ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=8550)
+ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=8080)
+
+
+
+#pip uninstall -y pydantic pydantic_core && pip install --no-cache-dir --force-reinstall pydantic
